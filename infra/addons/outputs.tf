@@ -22,3 +22,16 @@ output "istio_ingressgateway_dns_hostname" {
   value       = module.eks_addons.istio_ingressgateway_dns_hostname
   description = "DNS hostname of the Istio Ingress Gateway"
 }
+
+output "argocd_details" {
+  value = module.argocd.argocd
+}
+
+output "jenkins" {
+  description = "Jenkins_Info"
+  value = {
+    username = nonsensitive(data.kubernetes_secret.jenkins.data["jenkins-admin-user"]),
+    password = nonsensitive(data.kubernetes_secret.jenkins.data["jenkins-admin-password"]),
+    url      = local.jenkins_hostname
+  }
+}

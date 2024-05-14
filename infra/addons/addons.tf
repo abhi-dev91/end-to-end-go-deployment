@@ -1,6 +1,6 @@
 locals {
   region      = "us-east-2"
-  environment = "test"
+  environment = "uat"
   name        = "example"
   additional_aws_tags = {
     Owner      = "example"
@@ -20,8 +20,8 @@ locals {
 data "terraform_remote_state" "eks" {
   backend = "s3"
   config = {
-    region = "us-east-2"
-    bucket = "eks-ref-bucket"
+    region = "ap-south-1"
+    bucket = "test-example-lbhuojzo-767398031518"
     key    = "eks/terraform.tfstate"
   }
 }
@@ -120,7 +120,21 @@ module "argocd" {
   }
 }
 
+data "kubernetes_secret" "jenkins" {
+  depends_on = [helm_release.jenkins]
+  metadata {
+    name      = "jenkins"
+    namespace = "jenkins"
+  }
+}
+
+resource "kubernetes_namespace" "jenkins" {
+  metadata {
+    name = "jenkins"
+  }
+}
 resource "helm_release" "jenkins" {
+  depends_on = [ kubernetes_namespace.jenkins ]
   name       = "jenkins"
   chart      = "jenkins"
   timeout    = 600

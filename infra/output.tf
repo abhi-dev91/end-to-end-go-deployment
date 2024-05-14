@@ -72,3 +72,8 @@ output "kms_policy_arn" {
   description = "ARN of KMS policy"
   value       = module.eks.kms_policy_arn
 }
+
+output "cluster_certificate_authority_data" {
+  value = module.eks.cluster_certificate_authority_data
+  
+}
