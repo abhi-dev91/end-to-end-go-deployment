@@ -1,0 +1,290 @@
+def COLOR_MAP = [
+    'SUCCESS': 'good',
+    'FAILURE': 'danger',
+]
+
+pipeline {
+  environment {
+    doError = '0'
+    AWS_ACCOUNT_ID = 271251951598
+    AWS_REGION = "us-east-2"
+    DOCKER_REPO_BASE_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    DOCKER_REPO_NAME = """${sh(
+                returnStdout: true,
+                script: 'basename=$(basename $GIT_URL) && echo ${basename%.*}'
+            ).trim()}"""
+    HELM_CHART_GIT_REPO_URL = "https://github.com/sq-ia/msa-sample-roboshop-helm-charts.git"
+    HELM_CHART_GIT_BRANCH = "main"
+    GIT_USER_EMAIL = "skaf-demo@squareops.com"
+    GIT_USER_NAME = "JenkinsUser"
+    DEPLOYMENT_STAGE = """${sh(
+                returnStdout: true,
+                script: 'echo ${GIT_BRANCH#origin/}'
+            ).trim()}"""
+    last_started_build_stage = ""   
+    IMAGE_NAME="${DOCKER_REPO_BASE_URL}/${DOCKER_REPO_NAME}/${DEPLOYMENT_STAGE}"
+    def BUILD_DATE = sh(script: "echo `date +%d_%m_%Y`", returnStdout: true).trim();
+    def scannerHome = tool 'SonarqubeScanner';
+  }
+
+  options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  agent {
+    kubernetes {
+        label 'jenkinsrun'
+        defaultContainer 'builder'
+        yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: builder
+    image: squareops/jenkins-build-agent:v3
+    securityContext:
+      privileged: true
+    volumeMounts:
+      - name: builder-storage
+        mountPath: /var/lib/docker
+  volumes:
+    - name: builder-storage
+      emptyDir: {}
+"""
+        }
+      }
+  
+  stages {
+    stage ('Static code Analysis') {
+      steps {
+// Sonarqube Analysis
+        withSonarQubeEnv ('SonarqubeScanner') {
+            sh 'echo SonarQube Analysis'
+            sh 'echo ${scannerHome}'
+            sh '${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${DOCKER_REPO_NAME}-${DEPLOYMENT_STAGE}'
+         }
+// Sonarqube Quality Gate
+         sh 'echo SonarQube Quality gate'
+         timeout(time: 1, unit: 'HOURS') {
+          waitForQualityGate abortPipeline: true
+       }
+// detect-secrets scan
+        script { 
+            sh '''
+            echo 'git secret scanning'
+            detect-secrets scan --all-files > detect-secrets-report.json
+            '''
+            
+            echo 'archive scan report'
+            archiveArtifacts artifacts: 'detect-secrets-report.json'
+            
+            echo 'Check for Secrets'
+            def secretsReport = readFile('detect-secrets-report.json')
+            def jsonSlurper = new groovy.json.JsonSlurper()
+            def reportJson = jsonSlurper.parseText(secretsReport)
+
+            if (reportJson.results) {
+              currentBuild.result = 'ABORTED'
+              error("Secrets detected. Aborting the pipeline. Check the report detect-secrets-report.json")
+            }
+        }
+      }
+     }
+
+    stage('Build Docker Image') { 
+      when {	
+      anyOf {
+              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
+              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+            }
+      }   
+      agent {
+        kubernetes {
+          label 'kaniko'
+          yaml """
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kaniko              
+          spec:
+            restartPolicy: Never
+            containers:
+            - name: kaniko
+              image: gcr.io/kaniko-project/executor:debug
+              command:
+              - /busybox/cat
+              tty: true 
+          """
+        }
+      }  
+      steps {
+       container('kaniko'){
+            script {
+              last_started = env.STAGE_NAME
+              echo 'Build start'              
+              sh '''/kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE} --no-push --oci-layout-path `pwd`/build/ --tarPath `pwd`/build/${DOCKER_REPO_NAME}-${BUILD_NUMBER}.tar
+              '''               
+            }   
+            stash includes: 'build/*.tar', name: 'image'          
+        }
+      }
+    }
+    stage('Scan Docker Image') {
+      when {	
+      anyOf {
+              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
+              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+            }
+      } 
+      agent {
+        kubernetes {           
+            containerTemplate {
+              name 'trivy'
+              image 'aquasec/trivy:0.35.0'
+              command 'sleep'
+              args 'infinity'
+            }
+        }
+      }
+      options { skipDefaultCheckout() }
+      steps {
+        container('trivy') {
+           script {
+              last_started = env.STAGE_NAME
+              echo 'Scan with trivy'    
+              unstash 'image'          
+              sh '''
+	      apk add --update libzip-dev curl-dev
+              apk add curl  && apk add jq
+              curl -o html.tpl "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl"
+	      trivy image --ignore-unfixed --format template --template "@html.tpl" -o scan-report.html --input build/${DOCKER_REPO_NAME}-${BUILD_NUMBER}.tar
+              trivy image --ignore-unfixed -f json -o scan-report.json --input build/${DOCKER_REPO_NAME}-${BUILD_NUMBER}.tar
+              '''
+              echo 'archive scan report'
+              archiveArtifacts artifacts: 'scan-report.json'
+	      archiveArtifacts artifacts: 'scan-report.html'
+              echo 'Docker Image Vulnerability Scanning'
+              high = sh (
+                   script: 'cat scan-report.json | jq .Results[].Vulnerabilities[].Severity | grep HIGH | wc -l',
+                   returnStdout: true
+              ).trim()
+              echo "High: ${high}"
+             
+             critical = sh (
+                  script: 'cat scan-report.json | jq .Results[].Vulnerabilities[].Severity | grep CRITICAL | wc -l',
+                   returnStdout: true
+              ).trim()
+              echo "Critical: ${critical}"             
+           }
+         }
+      } 
+    }    
+
+    stage('Push to ECR') {
+      when {	
+      anyOf {
+              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
+              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+            }
+      } 
+       agent {
+          kubernetes { 
+          yaml """
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kaniko              
+          spec:
+            restartPolicy: Never
+            containers:
+            - name: kaniko
+              image: gcr.io/kaniko-project/executor:debug
+              command:
+              - /busybox/cat
+              tty: true 
+          """  
+            }
+        }
+      //  options { skipDefaultCheckout() }
+       steps {        
+         container('kaniko') {
+           script {
+              echo 'push to ecr step start'
+              if ( "$high" < 120 && "$critical" < 80 ) {
+                withAWS(credentials: 'jenkins-demo-aws') {  
+                sh '''                                   
+                /kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE}
+                '''               
+                }   
+              } 
+              else {
+                echo "The Image can't be pushed due to too many vulnerbilities"
+                exit
+              }                                    
+            }
+	       }
+        }
+      }
+ 
+     stage('Asking for Deploy in prod') {
+              when {
+                 equals(actual: env.gitlabBranch , expected: "prod")
+             }
+             steps {
+                 input "Do you want to Deploy in Production?"
+             }
+         }
+ 
+     stage('Deploy') {
+      when {	
+      anyOf {
+              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
+              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
+              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+            }
+      } 
+       steps {    
+          container('builder') {
+            script {
+             withCredentials([gitUsernamePassword(credentialsId: 'jenkins-demo', gitToolName: 'Default')]) {
+             last_started_build_stage = env.STAGE_NAME
+               sh '''
+               git clone -b $HELM_CHART_GIT_BRANCH $HELM_CHART_GIT_REPO_URL
+               git config --global user.email $GIT_USER_EMAIL
+               git config --global user.name $GIT_USER_NAME
+               cd msa-sample-roboshop-helm-charts
+               yq e -i '(."'${DOCKER_REPO_NAME}'".image.repository = "'${DOCKER_REPO_BASE_URL}'/'${DOCKER_REPO_NAME}'/'${DEPLOYMENT_STAGE}'")' env/${DEPLOYMENT_STAGE}/values.yaml
+               yq e -i '(."'${DOCKER_REPO_NAME}'".image.tag = "'${BUILD_NUMBER}-${BUILD_DATE}'")' env/${DEPLOYMENT_STAGE}/values.yaml
+               git add .
+               git commit -m 'Docker Image version Update "'$JOB_NAME'"-"'$BUILD_NUMBER-$BUILD_DATE'"'
+               git push origin $HELM_CHART_GIT_BRANCH
+
+           '''
+         } 
+       }
+     }
+   }
+     }
+  }
+
+  post {
+        failure {
+            slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' Failed at - ' +  env.last_started_build_stage
+        }
+
+        success {
+            slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' SUCCESSFUL'
+        }
+    }
+}

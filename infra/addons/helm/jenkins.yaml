@@ -1,0 +1,98 @@
+controller:
+  JCasC:
+    securityRealm: |-
+      local:
+        allowsSignup: false
+        enableCaptcha: false
+        users:
+        - id: "$${chart-admin-username}"
+          name: "Jenkins Admin"
+          password: "$${chart-admin-password}"
+    authorizationStrategy: |-
+      loggedInUsersCanDoAnything:
+        allowAnonymousRead: false
+
+  installPlugins:
+    - kubernetes:4029.v5712230ccb_f8
+    - kubernetes-client-api:6.8.1-224.vd388fca_4db_3b_
+    - git:5.2.0
+    - configuration-as-code:1670.v564dc8b_982d0
+    - bitbucket:223.vd12f2bca5430
+    - aws-codecommit-jobs:0.3.0
+    - gitlab-plugin:1.5.35
+    - github
+    - slack:616.v03b_1e98d13dd
+    - prometheus:2.0.11
+    - cloudbees-disk-usage-simple:178.v1a_4d2f6359a_8
+    - workflow-aggregator:590.v6a_d052e5a_a_b_5
+    - dependency-check-jenkins-plugin:5.2.1
+    - gitlab-plugin:1.5.35
+    - github:1.34.4
+    - slack:616.v03b_1e98d13dd
+
+  additionalPlugins:
+    - aws-credentials:191.vcb_f183ce58b_9
+    - blueocean:1.27.0
+    - nodejs:1.5.1
+    - pipeline-aws:1.43
+    - sonar:2.14
+    - maven-plugin:3.19
+    - groovy:442.v817e6d937d6c
+    - docker-java-api:3.2.13-37.vf3411c9828b9
+    - docker-plugin:1.2.9
+    - docker-workflow:1.29
+    - copyartifact:1.46.4
+    - docker-build-step:2.8
+    - generic-webhook-trigger
+
+
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      kubernetes.io/tls-acme: "false"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hostName: ${hostname}
+    tls:
+      - secretName: jenkins-tls
+        hosts:
+          - ${hostname}
+
+  prometheus:
+    enabled: true
+    serviceMonitorAdditionalLabels:
+      release: "prometheus-operator"
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 3Gi
+    requests:
+      cpu: 200m
+      memory: 1500Mi
+
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+            - key: "Infra-Services"
+              operator: In
+              values:
+              - "true"
+
+agent:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+  envVars:
+    - name: JAVA_ARGS
+      value: -Djenkins.branch.WorkspaceLocatorImpl.MAX_LENGTH=50
+
+persistence:
+  storageClass: gp2
+  size: ${jenkins_volume_size}
