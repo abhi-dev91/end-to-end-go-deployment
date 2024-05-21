@@ -200,7 +200,6 @@ spec:
           metadata:
             name: kaniko              
           spec:
-	    serviceAccountName: kaniko-service-account
             restartPolicy: Never
             containers:
             - name: kaniko
