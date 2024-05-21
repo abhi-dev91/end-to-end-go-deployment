@@ -9,21 +9,21 @@ pipeline {
     AWS_ACCOUNT_ID = 767398031518
     AWS_REGION = "us-east-2"
     DOCKER_REPO_BASE_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-    DOCKER_REPO_NAME = """${sh(
+    DOCKER_REPO_NAME = sh(
                 returnStdout: true,
                 script: 'basename=$(basename $GIT_URL) && echo ${basename%.*}'
-            ).trim()}"""
+            ).trim()
     HELM_CHART_GIT_REPO_URL = "https://github.com/abhi-dev91/end-to-end-go-deployment.git"
     HELM_CHART_GIT_BRANCH = "main"
     GIT_USER_EMAIL = "sahuonwater@gmail.com"
     GIT_USER_NAME = "abhishek"
-    DEPLOYMENT_STAGE = """${sh(
+    DEPLOYMENT_STAGE = sh(
                 returnStdout: true,
                 script: 'echo ${GIT_BRANCH#origin/}'
-            ).trim()}"""
+            ).trim()
     last_started_build_stage = ""   
     IMAGE_NAME="${DOCKER_REPO_BASE_URL}/${DOCKER_REPO_NAME}/${DEPLOYMENT_STAGE}"
-    def BUILD_DATE = sh(script: "echo `date +%d_%m_%Y`", returnStdout: true).trim();
+    def BUILD_DATE = sh(script: "echo `date +%d_%m_%Y`", returnStdout: true).trim()
     // def scannerHome = tool 'SonarqubeScanner';
   }
 
@@ -57,18 +57,6 @@ spec:
   stages {
     stage ('Static code Analysis') {
       steps {
-// Sonarqube Analysis
-//         withSonarQubeEnv ('SonarqubeScanner') {
-//             sh 'echo SonarQube Analysis'
-//             sh 'echo ${scannerHome}'
-//             sh '${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${DOCKER_REPO_NAME}-${DEPLOYMENT_STAGE}'
-//          }
-// // Sonarqube Quality Gate
-//          sh 'echo SonarQube Quality gate'
-//          timeout(time: 1, unit: 'HOURS') {
-//           waitForQualityGate abortPipeline: true
-//        }
-// detect-secrets scan
         script { 
             sh '''
             echo 'git secret scanning'
@@ -95,11 +83,11 @@ spec:
     stage('Build Docker Image') { 
       when {	
       anyOf {
-              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
-              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+              expression { env.DEPLOYMENT_STAGE == 'main' }
+              expression { env.DEPLOYMENT_STAGE == 'dev' }
+              expression { env.DEPLOYMENT_STAGE == 'demo' }
+              expression { env.DEPLOYMENT_STAGE == 'prod' }
+              expression { env.DEPLOYMENT_STAGE == 'stg' }
             }
       }   
       agent {
@@ -122,43 +110,46 @@ spec:
         }
       }  
       steps {
-	dir('app/') {
-       container('kaniko'){
+        dir('app/') {
+          container('kaniko') {
             script {
               last_started = env.STAGE_NAME
               echo 'Build start'              
-              sh '''/kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE} --no-push --oci-layout-path `pwd`/build/ --tarPath `pwd`/build/${DOCKER_REPO_NAME}-${BUILD_NUMBER}.tar
+              sh '''
+              /kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE} --no-push --oci-layout-path `pwd`/build/ --tarPath `pwd`/build/${DOCKER_REPO_NAME}-${BUILD_NUMBER}.tar
               '''               
             }   
             stash includes: 'build/*.tar', name: 'image'          
+          }
         }
-      }}
+      }
     }
+
     stage('Scan Docker Image') {
       when {	
       anyOf {
-              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
-              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+              expression { env.DEPLOYMENT_STAGE == 'main' }
+              expression { env.DEPLOYMENT_STAGE == 'dev' }
+              expression { env.DEPLOYMENT_STAGE == 'demo' }
+              expression { env.DEPLOYMENT_STAGE == 'prod' }
+              expression { env.DEPLOYMENT_STAGE == 'stg' }
             }
       } 
       agent {
         kubernetes {           
-            containerTemplate {
-              name 'trivy'
-              image 'aquasec/trivy:0.35.0'
-              command 'sleep'
-              args 'infinity'
-            }
+          containerTemplate {
+            name 'trivy'
+            image 'aquasec/trivy:0.35.0'
+            command 'sleep'
+            args 'infinity'
+          }
         }
       }
       options { skipDefaultCheckout() }
       steps {
-	      dir('app/') {
-        container('trivy') {
-           script {
+        dir('app/') {
+          container('trivy') {
+            script {
               last_started = env.STAGE_NAME
               echo 'Scan with trivy'    
               unstash 'image'          
@@ -179,29 +170,29 @@ spec:
               ).trim()
               echo "High: ${high}"
              
-             critical = sh (
+              critical = sh (
                   script: 'cat scan-report.json | jq .Results[].Vulnerabilities[].Severity | grep CRITICAL | wc -l',
                    returnStdout: true
               ).trim()
               echo "Critical: ${critical}"             
-           }
-         }
-      } 
+            }
+          }
+        } 
       }
     }    
 
     stage('Push to ECR') {
       when {	
       anyOf {
-              expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
-              expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'demo' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'prod' };
-              expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
+              expression { env.DEPLOYMENT_STAGE == 'main' }
+              expression { env.DEPLOYMENT_STAGE == 'dev' }
+              expression { env.DEPLOYMENT_STAGE == 'demo' }
+              expression { env.DEPLOYMENT_STAGE == 'prod' }
+              expression { env.DEPLOYMENT_STAGE == 'stg' }
             }
       } 
-       agent {
-          kubernetes { 
+      agent {
+        kubernetes { 
           yaml """
           apiVersion: v1
           kind: Pod
@@ -217,42 +208,41 @@ spec:
               - /busybox/cat
               tty: true 
           """  
-            }
         }
-      //  options { skipDefaultCheckout() }
-       steps {    
-	       dir('app/') {
-         container('kaniko') {
-           script {
+      }
+      steps {    
+        dir('app/') {
+          container('kaniko') {
+            script {
               echo 'push to ecr step start'
-              if ( "$high" < 120 && "$critical" < 80 ) {
-                {  
+              if (high.toInteger() < 120 && critical.toInteger() < 80) {
                 sh '''                                   
                 /kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE}
                 '''               
-                }   
-              } 
-              else {
-                echo "The Image can't be pushed due to too many vulnerbilities"
-                exit
+              } else {
+                echo "The Image can't be pushed due to too many vulnerabilities"
+                currentBuild.result = 'FAILURE'
+                error("Too many vulnerabilities in the image")
               }                                    
             }
-	       }
+          }
         }
-       }
       }
+    }
  
-     stage('Asking for Deploy in prod') {
-              when {
-                 equals(actual: env.gitlabBranch , expected: "prod")
-             }
-             steps {
-                 input "Do you want to Deploy in Production?"
-             }
-         }
+    stage('Asking for Deploy in prod') {
+      when {
+        equals(actual: env.gitlabBranch, expected: "prod")
+      }
+      steps {
+        input "Do you want to Deploy in Production?"
+      }
+    }
  
-     stage('Deploy') {
+    stage('Deploy') {
       when {	
+      any
+	
       anyOf {
               expression { "${env.DEPLOYMENT_STAGE}" == 'main' }; 
               expression { "${env.DEPLOYMENT_STAGE}" == 'dev' };
