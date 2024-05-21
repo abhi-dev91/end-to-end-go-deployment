@@ -72,7 +72,8 @@ spec:
         script { 
             sh '''
             echo 'git secret scanning'
-            detect-secrets scan --all-files > detect-secrets-report.json
+	    ls -la
+            detect-secrets scan --all-files ./app > detect-secrets-report.json
             '''
             
             echo 'archive scan report'
