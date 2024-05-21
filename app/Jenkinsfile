@@ -122,6 +122,7 @@ spec:
         }
       }  
       steps {
+	dir('app/') {
        container('kaniko'){
             script {
               last_started = env.STAGE_NAME
@@ -131,7 +132,7 @@ spec:
             }   
             stash includes: 'build/*.tar', name: 'image'          
         }
-      }
+      }}
     }
     stage('Scan Docker Image') {
       when {	
@@ -155,6 +156,7 @@ spec:
       }
       options { skipDefaultCheckout() }
       steps {
+	      dir('app/') {
         container('trivy') {
            script {
               last_started = env.STAGE_NAME
@@ -185,6 +187,7 @@ spec:
            }
          }
       } 
+      }
     }    
 
     stage('Push to ECR') {
@@ -216,7 +219,8 @@ spec:
             }
         }
       //  options { skipDefaultCheckout() }
-       steps {        
+       steps {    
+	       dir('app/') {
          container('kaniko') {
            script {
               echo 'push to ecr step start'
@@ -234,6 +238,7 @@ spec:
             }
 	       }
         }
+       }
       }
  
      stage('Asking for Deploy in prod') {
@@ -255,7 +260,8 @@ spec:
               expression { "${env.DEPLOYMENT_STAGE}" == 'stg' }
             }
       } 
-       steps {    
+       steps {  
+	       dir('app/') {
           container('builder') {
             script {
              withCredentials([gitUsernamePassword(credentialsId: 'jenkins-demo', gitToolName: 'Default')]) {
@@ -276,6 +282,7 @@ spec:
        }
      }
    }
+       }
      }
   }
 
