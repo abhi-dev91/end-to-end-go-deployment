@@ -208,6 +208,7 @@ spec:
           metadata:
             name: kaniko              
           spec:
+	    serviceAccountName: kaniko-service-account
             restartPolicy: Never
             containers:
             - name: kaniko
@@ -225,7 +226,7 @@ spec:
            script {
               echo 'push to ecr step start'
               if ( "$high" < 120 && "$critical" < 80 ) {
-                withAWS(credentials: 'jenkins-demo-aws') {  
+                {  
                 sh '''                                   
                 /kaniko/executor --dockerfile Dockerfile  --context=`pwd` --destination=${IMAGE_NAME}:${BUILD_NUMBER}-${BUILD_DATE}
                 '''               
@@ -264,7 +265,7 @@ spec:
 	       dir('app/') {
           container('builder') {
             script {
-             withCredentials([gitUsernamePassword(credentialsId: 'jenkins-demo', gitToolName: 'Default')]) {
+              {
              last_started_build_stage = env.STAGE_NAME
                sh '''
                git clone -b $HELM_CHART_GIT_BRANCH $HELM_CHART_GIT_REPO_URL
