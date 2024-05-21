@@ -1,7 +1,7 @@
 locals {
-  region      = "us-east-2"
-  environment = "uat"
-  name        = "example"
+  region      = "us-west-2"
+  environment = "stg"
+  name        = "eks"
   additional_aws_tags = {
     Owner      = "example"
     Expires    = "Never"
@@ -11,8 +11,8 @@ locals {
   vpc_cidr           = "172.10.0.0/16"
   vpn_server_enabled = false
   cert_manager_email = "sahuonwater@gmail.com"
-  jenkins_hostname = "jenkins.abc.com"
-  argocd_hostname = "argocd.abc.com"
+  jenkins_hostname = "jenkins.test.atmosly.com"
+  argocd_hostname = "argocd.test.atmosly.com"
 
 }
 
@@ -21,7 +21,7 @@ data "terraform_remote_state" "eks" {
   backend = "s3"
   config = {
     region = "ap-south-1"
-    bucket = "test-example-lbhuojzo-767398031518"
+    bucket = "uat-example-p31rq5ij-767398031518"
     key    = "eks/terraform.tfstate"
   }
 }
@@ -113,7 +113,7 @@ module "argocd" {
   argocd_config = {
     hostname                     = local.argocd_hostname
     values_yaml                  = file("./helm/argocd.yaml")
-    redis_ha_enabled             = true
+    redis_ha_enabled             = false
     autoscaling_enabled          = true
     slack_notification_token     = ""
     argocd_notifications_enabled = true
@@ -138,7 +138,7 @@ resource "helm_release" "jenkins" {
   name       = "jenkins"
   chart      = "jenkins"
   timeout    = 600
-  version    = "4.5.0"
+  version    = "5.1.18"
   namespace  = "jenkins"
   repository = "https://charts.jenkins.io/"
 

@@ -1,6 +1,6 @@
 locals {
   name = "example"
-  environment = "test"
+  environment = "uat"
 }
 
 resource "random_string" "bucket_suffix" {

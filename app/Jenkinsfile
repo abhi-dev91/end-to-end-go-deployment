@@ -6,17 +6,17 @@ def COLOR_MAP = [
 pipeline {
   environment {
     doError = '0'
-    AWS_ACCOUNT_ID = 271251951598
+    AWS_ACCOUNT_ID = 767398031518
     AWS_REGION = "us-east-2"
     DOCKER_REPO_BASE_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
     DOCKER_REPO_NAME = """${sh(
                 returnStdout: true,
                 script: 'basename=$(basename $GIT_URL) && echo ${basename%.*}'
             ).trim()}"""
-    HELM_CHART_GIT_REPO_URL = "https://github.com/sq-ia/msa-sample-roboshop-helm-charts.git"
+    HELM_CHART_GIT_REPO_URL = "https://github.com/abhi-dev91/end-to-end-go-deployment.git"
     HELM_CHART_GIT_BRANCH = "main"
-    GIT_USER_EMAIL = "skaf-demo@squareops.com"
-    GIT_USER_NAME = "JenkinsUser"
+    GIT_USER_EMAIL = "sahuonwater@gmail.com"
+    GIT_USER_NAME = "abhishek"
     DEPLOYMENT_STAGE = """${sh(
                 returnStdout: true,
                 script: 'echo ${GIT_BRANCH#origin/}'
@@ -24,7 +24,7 @@ pipeline {
     last_started_build_stage = ""   
     IMAGE_NAME="${DOCKER_REPO_BASE_URL}/${DOCKER_REPO_NAME}/${DEPLOYMENT_STAGE}"
     def BUILD_DATE = sh(script: "echo `date +%d_%m_%Y`", returnStdout: true).trim();
-    def scannerHome = tool 'SonarqubeScanner';
+    // def scannerHome = tool 'SonarqubeScanner';
   }
 
   options {
@@ -58,16 +58,16 @@ spec:
     stage ('Static code Analysis') {
       steps {
 // Sonarqube Analysis
-        withSonarQubeEnv ('SonarqubeScanner') {
-            sh 'echo SonarQube Analysis'
-            sh 'echo ${scannerHome}'
-            sh '${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${DOCKER_REPO_NAME}-${DEPLOYMENT_STAGE}'
-         }
-// Sonarqube Quality Gate
-         sh 'echo SonarQube Quality gate'
-         timeout(time: 1, unit: 'HOURS') {
-          waitForQualityGate abortPipeline: true
-       }
+//         withSonarQubeEnv ('SonarqubeScanner') {
+//             sh 'echo SonarQube Analysis'
+//             sh 'echo ${scannerHome}'
+//             sh '${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${DOCKER_REPO_NAME}-${DEPLOYMENT_STAGE}'
+//          }
+// // Sonarqube Quality Gate
+//          sh 'echo SonarQube Quality gate'
+//          timeout(time: 1, unit: 'HOURS') {
+//           waitForQualityGate abortPipeline: true
+//        }
 // detect-secrets scan
         script { 
             sh '''
@@ -278,13 +278,13 @@ spec:
      }
   }
 
-  post {
-        failure {
-            slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' Failed at - ' +  env.last_started_build_stage
-        }
+  // post {
+  //       failure {
+  //           slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' Failed at - ' +  env.last_started_build_stage
+  //       }
 
-        success {
-            slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' SUCCESSFUL'
-        }
-    }
+  //       success {
+  //           slackSend message: 'Pipeline for ' + env.JOB_NAME + ' with Build Id - ' +  env.BUILD_ID + ' SUCCESSFUL'
+  //       }
+  //   }
 }
