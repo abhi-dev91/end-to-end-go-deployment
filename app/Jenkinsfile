@@ -192,7 +192,8 @@ spec:
             }
       } 
       agent {
-        kubernetes { 
+        kubernetes {
+          label 'kaniko'
           yaml """
           apiVersion: v1
           kind: Pod
@@ -207,7 +208,7 @@ spec:
               command:
               - /busybox/cat
               tty: true 
-          """  
+          """
         }
       }
       steps {    
