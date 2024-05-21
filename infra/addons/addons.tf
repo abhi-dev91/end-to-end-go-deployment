@@ -151,3 +151,4 @@ resource "helm_release" "jenkins" {
     )
   ]
 }
+

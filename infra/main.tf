@@ -169,6 +169,12 @@ module "eks" {
   }
 }
 
+resource "aws_iam_policy_attachment" "ecr_policy_attachment" {
+  name       = "attach-ec2-container-registry-poweruser"
+  roles      = [module.eks.worker_iam_role_arn]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+}
+
 # module "eks_managed_node_group" {
 #   source = "terraform-aws-modules/eks/aws//modules/eks-managed-node-group"
 
