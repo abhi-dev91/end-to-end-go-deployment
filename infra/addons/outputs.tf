@@ -35,3 +35,13 @@ output "jenkins" {
     url      = local.jenkins_hostname
   }
 }
+
+output "mysql_info" {
+  description = "Jenkins_Info"
+  value = {
+    username = local.mysql_username,
+    password = nonsensitive(data.kubernetes_secret.mysql.data["mysql-password"]),
+    root_password = nonsensitive(data.kubernetes_secret.mysql.data["mysql-root-password"])
+    host      = "mysqldb.mysql.svc.cluster.local"
+  }
+}

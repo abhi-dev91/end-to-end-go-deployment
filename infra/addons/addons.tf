@@ -1,9 +1,9 @@
 locals {
   region      = "us-west-2"
-  environment = "stg"
+  environment = "uat"
   name        = "eks"
   additional_aws_tags = {
-    Owner      = "example"
+    Owner      = "abhishek"
     Expires    = "Never"
     Department = "Engineering"
   }
@@ -13,6 +13,9 @@ locals {
   cert_manager_email = "sahuonwater@gmail.com"
   jenkins_hostname = "jenkins.test.atmosly.com"
   argocd_hostname = "argocd.test.atmosly.com"
+  mysql_database_name = "go_backend"
+  mysql_username = "abhishek"
+  mysql_password = "abhi1234"
 
 }
 
@@ -37,7 +40,7 @@ data "aws_eks_cluster_auth" "cluster" {
 
 module "eks_addons" {
   source                              = "squareops/eks-addons/aws"
-  version = "2.1.2"
+  version = "2.1.0"
   name                                = local.name
   vpc_id                              = data.terraform_remote_state.eks.outputs.vpc_id
   environment                         = local.environment
@@ -109,6 +112,7 @@ module "eks_addons" {
 
 
 module "argocd" {
+  depends_on = [ module.eks_addons ]
   source = "squareops/argocd/kubernetes"
   argocd_config = {
     hostname                     = local.argocd_hostname
@@ -125,6 +129,14 @@ data "kubernetes_secret" "jenkins" {
   metadata {
     name      = "jenkins"
     namespace = "jenkins"
+  }
+}
+
+data "kubernetes_secret" "mysql" {
+  depends_on = [helm_release.mysql]
+  metadata {
+    name      = "mysqldb"
+    namespace = "mysql"
   }
 }
 
@@ -147,6 +159,32 @@ resource "helm_release" "jenkins" {
     {
       hostname            = local.jenkins_hostname
       jenkins_volume_size = "20Gi"
+    }
+    )
+  ]
+}
+
+resource "kubernetes_namespace" "mysql" {
+  metadata {
+    name = "mysql"
+  }
+}
+
+resource "helm_release" "mysql" {
+  depends_on = [ kubernetes_namespace.mysql ]
+  name       = "mysqldb"
+  chart      = "mysql"
+  timeout    = 600
+  version    = "10.2.2"
+  namespace  = "mysql"
+  repository = "https://charts.bitnami.com/bitnami"
+
+  values = [
+    templatefile("./helm/mysql.yaml", 
+    {
+      database_name            = local.mysql_database_name
+      username =  local.mysql_username
+      password = local.mysql_password
     }
     )
   ]

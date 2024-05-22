@@ -230,14 +230,63 @@ spec:
       }
     }
  
-    stage('Asking for Deploy in prod') {
-      when {
-        equals(actual: env.gitlabBranch, expected: "prod")
+    stage('Deploy application') {
+      agent {
+    kubernetes {
+        label 'jenkinsrun'
+        defaultContainer 'builder'
+        yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: builder
+    image: squareops/jenkins-build-agent:v3
+    securityContext:
+      privileged: true
+    volumeMounts:
+      - name: builder-storage
+        mountPath: /var/lib/docker
+  volumes:
+    - name: builder-storage
+      emptyDir: {}
+"""
+        }
       }
+      
       steps {
-        input "Do you want to Deploy in Production?"
+        script {
+
+          echo  "Deploying application."
+          sh '''
+                    kubectl apply -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sample-helm-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: sample-chart
+    repoURL: public.ecr.aws/g7z5u7g9
+    targetRevision: 2.0.26
+    helm:
+     parameters: []
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+EOF
+                    '''
+        }
+        
       }
     }
+
  
   }
 

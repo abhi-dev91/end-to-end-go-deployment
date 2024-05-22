@@ -1,6 +1,6 @@
 locals {
   region      = "us-west-2"
-  environment = "stg"
+  environment = "uat"
   name        = "eks"
   additional_aws_tags = {
     Owner      = "Organization_name"
@@ -171,7 +171,7 @@ module "eks" {
 
 resource "aws_iam_policy_attachment" "ecr_policy_attachment" {
   name       = "attach-ec2-container-registry-poweruser"
-  roles      = [module.eks.worker_iam_role_arn]
+  roles      = [module.eks.worker_iam_role_name]
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
